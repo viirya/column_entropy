@@ -6,6 +6,8 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.hive._
 import math.{log => mlog} 
 
+import scala.collection.{Map => Map}
+
 object ColumnEntropy {
 
   def main(args: Array[String]) {
@@ -23,17 +25,43 @@ object ColumnEntropy {
     val sc = new SparkContext(conf)
     val hiveContext = new org.apache.spark.sql.hive.HiveContext(sc)
 
-    val queries = s"select cast($first_column_name as STRING), count($count_column_name) from $table group by $first_column_name" :: s"select cast($second_column_name as STRING), count($count_column_name) from $table group by $second_column_name" :: List()
+    val queries = Map(first_column_name -> s"select cast($first_column_name as STRING), count($count_column_name) from $table group by $first_column_name", second_column_name -> s"select cast($second_column_name as STRING), count($count_column_name) from $table group by $second_column_name")
 
-    val entropies = queries.map((query) => {
+    var results = Map[String, Map[String, Long]]() 
+
+    val entropies = queries.map((q) => {
+      val key = q._1
+      val query = q._2
+
       val counts = hiveContext.hql(query).map(r => { (r.getString(0) -> r.getLong(1))}).collectAsMap()
+      results = results + (key -> counts)
+
       var total = 0L
       counts.foreach(total += _._2)
-      counts.mapValues((n) => { val p = n / (total + 0.0); p * 1 / mlog(p) }).values.fold(0.0)(_ + _)
+      -counts.mapValues((n) => { val p = n / (total + 0.0); p * mlog(p) }).values.fold(0.0)(_ + _)
     })
 
+
+    // mutual information
+
+    val query = s"select cast($first_column_name as STRING), cast($second_column_name as STRING), count($count_column_name) from $table group by $first_column_name, $second_column_name"
+
+    val counts = hiveContext.hql(query).map(r => { (r.getString(0), r.getString(1), r.getLong(2))}).collect()
+    var total = 0L
+    counts.foreach(total += _._3)
+    val cond_entropy = counts.map((n) => {
+      val key_y = n._2
+      val value = n._3
+      val p = value / (total + 0.0)
+      p * mlog((results(second_column_name)(key_y)) / p)
+    }).fold(0.0)(_ + _)
+ 
     var index = 0
     entropies.foreach((entropy) => {println(s"column: ${args(index)} entropy = $entropy"); index += 1})
+ 
+    val mi = entropies.head - cond_entropy
+    println(s"Mutual information: $mi")
+
   }
 }
 

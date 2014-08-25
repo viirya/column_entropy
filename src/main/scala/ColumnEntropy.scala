@@ -23,13 +23,13 @@ object ColumnEntropy {
     val sc = new SparkContext(conf)
     val hiveContext = new org.apache.spark.sql.hive.HiveContext(sc)
 
-    val queries = s"select count($count_column_name) from $table group by $first_column_name" :: s"select count($count_column_name) from $table group by $second_column_name" :: List()
+    val queries = s"select cast($first_column_name as STRING), count($count_column_name) from $table group by $first_column_name" :: s"select cast($second_column_name as STRING), count($count_column_name) from $table group by $second_column_name" :: List()
 
     val entropies = queries.map((query) => {
-      val counts = hiveContext.hql(query).map(r => { r.getLong(0)}).collect()
+      val counts = hiveContext.hql(query).map(r => { (r.getString(0) -> r.getLong(1))}).collectAsMap()
       var total = 0L
-      counts.map(total += _)
-      counts.map(n => { val p = n / (total + 0.0); p * 1 / mlog(p) } ).fold(0.0)(_ + _)
+      counts.foreach(total += _._2)
+      counts.mapValues((n) => { val p = n / (total + 0.0); p * 1 / mlog(p) }).values.fold(0.0)(_ + _)
     })
 
     var index = 0

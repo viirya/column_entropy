@@ -38,6 +38,8 @@ object ColumnPairsMI {
  
     val table = args(0)
     val from = args(1).toInt
+
+    // if until is not greater than 0, then we will calculate all combinations
     val until = args(2).toInt
 
     val mi_calculator = new ColumnMI()
@@ -69,9 +71,13 @@ class ColumnMI {
 
   def getColumnsEntropies(table: String, from: Int, until: Int): Tuple2[Array[Array[String]], Array[Double]] = {
 
-    val columns = getColumnList(table).combinations(2).toArray
+    var columns = getColumnList(table).combinations(2).toArray
 
-    val mis = columns.slice(from, until).map((column_pair) => {
+    if (until > 0) {
+      columns = columns.slice(from, until)
+    }
+
+    val mis = columns.map((column_pair) => {
       getEntropy(column_pair, table)
     })
 

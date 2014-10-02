@@ -8,22 +8,81 @@ import math.{log => mlog}
 
 import scala.collection.{Map => Map}
 
-object ColumnEntropy {
+object ColumnPairMI {
 
   def main(args: Array[String]) {
     if (args.length < 3) {
-      System.err.println("Usage: ColumnEntropy <column1> <column2> <table>")
+      System.err.println("Usage: ColumnPairMI <column1> <column2> <table>")
       System.exit(1)
     }
-
+ 
     val first_column_name = args(0)
     val second_column_name = args(1)
     val table = args(2)
 
-    val conf = new SparkConf().setAppName("Calculate column entropy")
-    val sc = new SparkContext(conf)
-    val hiveContext = new org.apache.spark.sql.hive.HiveContext(sc)
+    val mi_calculator = new ColumnMI()
 
+    val mi = mi_calculator.getEntropy(Array(first_column_name, second_column_name), table)
+    println(s"Final result: $mi")
+  }
+
+}
+
+object ColumnPairsMI {
+
+  def main(args: Array[String]) {
+    if (args.length < 3) {
+      System.err.println("Usage: ColumnPairsMI <table> <from> <until>")
+      System.exit(1)
+    }
+ 
+    val table = args(0)
+    val from = args(1).toInt
+    val until = args(2).toInt
+
+    val mi_calculator = new ColumnMI()
+    val columns_entropies = mi_calculator.getColumnsEntropies(table, from, until)
+    var index = 0
+
+    columns_entropies._2.foreach((entropy) => {
+        val col_pair = columns_entropies._1(index)
+        println(s"columns: ${col_pair(0)} ${col_pair(1)} mi: $entropy")
+        index += 1
+    })
+  }
+
+}
+ 
+class ColumnMI {
+
+  val conf = new SparkConf().setAppName("Calculate column entropy")
+  val sc = new SparkContext(conf)
+  val hiveContext = new org.apache.spark.sql.hive.HiveContext(sc)
+
+  def getColumnList(table: String): Array[String] = {
+
+    val fields = hiveContext.hql(s"describe $table").map(r => { r.getString(0) }).collect() 
+
+    return fields
+ 
+  }
+
+  def getColumnsEntropies(table: String, from: Int, until: Int): Tuple2[Array[Array[String]], Array[Double]] = {
+
+    val columns = getColumnList(table).combinations(2).toArray
+
+    val mis = columns.slice(from, until).map((column_pair) => {
+      getEntropy(column_pair, table)
+    })
+
+    return (columns, mis)
+  }
+
+  def getEntropy(columns: Array[String], table: String): Double = {
+ 
+    val first_column_name = columns(0)
+    val second_column_name = columns(1)
+ 
     val queries = Map(first_column_name -> s"select cast($first_column_name as STRING), count(cast($first_column_name as STRING)) from $table group by $first_column_name", second_column_name -> s"select cast($second_column_name as STRING), count(cast($second_column_name as STRING)) from $table group by $second_column_name")
 
     var results = Map[String, Double]() 
@@ -61,10 +120,12 @@ object ColumnEntropy {
     }).fold(0.0)(_ + _)
  
     var index = 0
-    entropies.foreach((entropy) => {println(s"column: ${args(index)} entropy = $entropy"); index += 1})
+    entropies.foreach((entropy) => {println(s"column: ${columns(index)} entropy = $entropy"); index += 1})
 
     val mi = entropies.head - cond_entropy
     println(s"Mutual information: $mi")
+
+    return mi
 
   }
 }

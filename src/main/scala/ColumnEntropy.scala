@@ -31,24 +31,26 @@ object ColumnPairMI {
 object ColumnPairsMI {
 
   def main(args: Array[String]) {
-    if (args.length < 3) {
+    if (args.length < 1) {
       System.err.println("Usage: ColumnPairsMI <table> <from> <until>")
       System.exit(1)
     }
  
     val table = args(0)
-    val from = args(1).toInt
+    val from: Int = if (args.length > 1) args(1).toInt else 0
 
     // if until is not greater than 0, then we will calculate all combinations
-    val until = args(2).toInt
+    val until: Int = if (args.length > 2) args(2).toInt else -1
 
     val mi_calculator = new ColumnMI()
     val columns_entropies = mi_calculator.getColumnsEntropies(table, from, until)
     var index = 0
 
     columns_entropies._2.foreach((entropy) => {
-        val col_pair = columns_entropies._1(index)
-        println(s"columns: ${col_pair(0)} ${col_pair(1)} mi: $entropy")
+        if (entropy != 0.0) {
+          val col_pair = columns_entropies._1(index)
+          println(s"columns: ${col_pair(0)} ${col_pair(1)} mi: $entropy")
+        }
         index += 1
     })
   }
@@ -78,7 +80,10 @@ class ColumnMI {
     }
 
     val mis = columns.map((column_pair) => {
-      getEntropy(column_pair, table)
+      if (column_pair(0) != "__presto__sample_weight__" && column_pair(1) != "__presto__sample_weight__")
+        getEntropy(column_pair, table)
+      else
+        0.0
     })
 
     return (columns, mis)
@@ -97,16 +102,20 @@ class ColumnMI {
       val key = q._1
       val query = q._2
 
-      val counts = hiveContext.hql(query).map(r => { (r.getString(0) -> r.getLong(1))}).collectAsMap()
+      val counts = hiveContext.hql(query).map(r => { if (r.isNullAt(0)) ("NULL" -> r.getLong(1)) else (r.getString(0) -> r.getLong(1))}).collectAsMap()
 
       var total = 0L
-      counts.foreach(total += _._2)
+      counts.foreach((n) => { if (n._1 != "NULL") total += n._2 })
       -counts.map((n) => {
-        val p = n._2 / (total + 0.0)
-        if (key == second_column_name) {
-          results = results + (n._1 -> p)
+        if (n._1 != "NULL") {
+          val p = n._2 / (total + 0.0)
+          if (key == second_column_name) {
+            results = results + (n._1 -> p)
+          }
+          p * mlog(p)
+        } else {
+          0.0
         }
-        p * mlog(p)
       }).fold(0.0)(_ + _)
     })
 
@@ -115,14 +124,18 @@ class ColumnMI {
 
     val query = s"select cast($first_column_name as STRING), cast($second_column_name as STRING), count(cast($second_column_name as STRING)) from $table group by $first_column_name, $second_column_name"
 
-    val counts = hiveContext.hql(query).map(r => { (r.getString(0), r.getString(1), r.getLong(2))}).collect()
+    val counts = hiveContext.hql(query).map(r => { if (r.isNullAt(0) || r.isNullAt(1)) ("NULL", "NULL", r.getLong(2)) else (r.getString(0), r.getString(1), r.getLong(2))}).collect()
     var total = 0L
-    counts.foreach(total += _._3)
+    counts.foreach((n) => { if (n._1 != "NULL") total += n._3 })
     val cond_entropy = counts.map((n) => {
-      val key_y = n._2
-      val value = n._3
-      val p = value / (total + 0.0)
-      p * mlog((results(key_y)) / p)
+      if (n._1 != "NULL") {
+        val key_y = n._2
+        val value = n._3
+        val p = value / (total + 0.0)
+        p * mlog((results(key_y)) / p)
+      } else {
+        0.0
+      }
     }).fold(0.0)(_ + _)
  
     var index = 0

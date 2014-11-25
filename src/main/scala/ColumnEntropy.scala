@@ -6,6 +6,9 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.hive._
 import math.{log => mlog} 
 
+import java.io.File
+import java.io.FileOutputStream
+
 import scala.collection.{Map => Map}
 
 object ColumnPairMI {
@@ -56,12 +59,60 @@ object ColumnPairsMI {
   }
 
 }
+
+object ColumnPairsMIExport {
+
+  def main(args: Array[String]) {
+    if (args.length < 2) {
+      System.err.println("Usage: ColumnPairsMIExport <table> <export table>")
+      System.exit(1)
+    }
+ 
+    val table = args(0)
+    val export_table = args(1)
+
+    val mi_calculator = new ColumnMI()
+    val columns_entropies = mi_calculator.getColumnsEntropies(table, 0, -1)
+    mi_calculator.exportToHiveTable(export_table, columns_entropies)
+
+  }
+} 
  
 class ColumnMI {
 
   val conf = new SparkConf().setAppName("Calculate column entropy")
   val sc = new SparkContext(conf)
   val hiveContext = new org.apache.spark.sql.hive.HiveContext(sc)
+
+  def createTempOutput(): Option[File] = {
+    try {
+      return Some(File.createTempFile("column_mi_", ".tmp"))
+    } catch { case e: Exception => return None }
+  }
+
+  def exportToHiveTable(table: String, columns_entropies: Tuple2[Array[Array[String]], Array[Double]]) = {
+
+    createTempOutput() match {
+      case Some(file: File) =>
+        file.deleteOnExit()
+        val output = new FileOutputStream(file)
+
+        var index = 0
+        columns_entropies._2.foreach((entropy) => {
+            if (entropy != 0.0) {
+              val col_pair = columns_entropies._1(index)
+              println(s"columns: ${col_pair(0)} ${col_pair(1)} mi: $entropy")
+              output.write(s"${col_pair(0)}\t${col_pair(1)}\t$entropy\n".getBytes())
+            }
+            index += 1
+        })
+        output.close()
+
+        hiveContext.hql(s"LOAD DATA LOCAL INPATH '${file.getAbsolutePath()}' OVERWRITE INTO TABLE $table")
+
+      case None =>
+    }
+  }
 
   def getColumnList(table: String): Array[String] = {
 

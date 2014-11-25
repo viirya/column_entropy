@@ -13,6 +13,10 @@
 #### Compute mutual information for all column pairs
  
     ./bin/spark-submit --class ColumnPairsMI --master yarn-client --executor-memory 4G --num-executors 4 ../column_entropy/target/scala-2.10/calculate-column-entropy_2.10-1.0.jar <table>
+
+#### Compute mutual information for all column pairs and export to Hive table
+
+    ./bin/spark-submit --class ColumnPairsMIExport --master yarn-client --executor-memory 4G --num-executors 4 ../column_entropy/target/scala-2.10/calculate-column-entropy_2.10-1.0.jar <table> <export table>
  
 ### Results
 

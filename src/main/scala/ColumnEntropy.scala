@@ -109,7 +109,7 @@ class ColumnMI {
         output.close()
 
         hiveContext.hql(s"DROP TABLE $table")
-        hiveContext.hql(s"CREATE TABLE $table (col_from STRING, col_to STRING, mi DECIMAL(9, 7)) ROW FORMAT DELIMITED FIELDS TERMINATED BY '\\t'")
+        hiveContext.hql(s"CREATE TABLE $table (col_from STRING, col_to STRING, mi STRING) ROW FORMAT DELIMITED FIELDS TERMINATED BY '\\t'")
 
         hiveContext.hql(s"LOAD DATA LOCAL INPATH '${file.getAbsolutePath()}' OVERWRITE INTO TABLE $table")
 
